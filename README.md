@@ -18,6 +18,8 @@ tail -f your_file.log | hydrolog
 
 ## Hotkeys
 
+- <kbd>Q</kbd> – Quit
+
 - <kbd>C</kbd> – Toggle Crypto Connector Logs
 - <kbd>M</kbd> – Toggle Monitor Connector Logs
 - <kbd>D</kbd> – Toggle Domain Logs
