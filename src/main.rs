@@ -1,7 +1,7 @@
 use crossbeam::channel::{select, Receiver, Sender};
 use std::collections::{HashMap, VecDeque};
 use std::io::{stdout, Stdout, StdoutLock, Write};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{
     io::{self, BufRead},
     str::FromStr,
@@ -40,6 +40,18 @@ impl Time {
         let parts = [h, m, s, ms].map(String::from);
 
         Ok(Self { parts })
+    }
+
+    fn now() -> Self {
+        let now = chrono::offset::Local::now();
+        let h = now.format("%H");
+        let m = now.format("%M");
+        let s = now.format("%S");
+        let ms = now.format("%.3f");
+
+        let parts = [h, m, s, ms].map(|x| x.to_string());
+
+        Self { parts }
     }
 
     fn render(&self, other: Option<&Self>) -> String {
@@ -81,9 +93,8 @@ struct Record {
 
 impl Record {
     fn from_text(text: &str) -> Result<Self> {
-        let mut splitter = text.splitn(5, ' ');
-        let _month = splitter.next().context("Can't parse month")?;
-        let _day = splitter.next().context("Can't parse day")?;
+        let mut splitter = text.splitn(4, ' ');
+        let _date = splitter.next().context("Can't parse month")?;
         let time = splitter.next().context("Can't parse time")?;
         let level_str = splitter.next().context("Can't parse level")?;
         let level = Level::from_str(level_str)
@@ -108,9 +119,18 @@ impl Record {
         Ok(Self {
             level,
             time: Time::from_str(time)?,
-            path: path,
+            path,
             message: msg.into(),
         })
+    }
+
+    fn from_msg(msg: &str) -> Self {
+        Self {
+            level: Level::Trace,
+            time: Time::now(),
+            path: None,
+            message: msg.into()
+        }
     }
 
     fn render(
@@ -482,36 +502,39 @@ fn handle_msg(
     records: &mut VecDeque<Record>,
     text: String,
 ) -> bool {
-    match Record::from_text(&text) {
+    let rec = match Record::from_text(&text) {
         Ok(rec) => {
-            if records.len() == MAX_RECS {
-                records.pop_front();
-            }
-            records.push_back(rec.clone());
-
-            if ui.is_inspecting {
-                return false;
-            }
-
-            if ui.want_to_show_rec(&rec) {
-                let (max_path_len, new_dup_cnt) = rec.render(
-                    &mut stdout,
-                    state.max_path_len,
-                    state.duplicate_cnt,
-                    &state.last_rec,
-                    false,
-                    false,
-                );
-                state.max_path_len = max_path_len;
-                state.duplicate_cnt = new_dup_cnt;
-            }
-
-            state.last_rec = Some(rec);
+            rec
         }
         Err(_err) => {
-            println!("CANT PARSE: {}", text);
+            Record::from_msg(&text)
         }
+    };
+
+    if records.len() == MAX_RECS {
+        records.pop_front();
     }
+    records.push_back(rec.clone());
+
+    if ui.is_inspecting {
+        return false;
+    }
+
+    if ui.want_to_show_rec(&rec) {
+        let (max_path_len, new_dup_cnt) = rec.render(
+            &mut stdout,
+            state.max_path_len,
+            state.duplicate_cnt,
+            &state.last_rec,
+            false,
+            false,
+        );
+        state.max_path_len = max_path_len;
+        state.duplicate_cnt = new_dup_cnt;
+    }
+
+    state.last_rec = Some(rec);
+
     return true;
 }
 
